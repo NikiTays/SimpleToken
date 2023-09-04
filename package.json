@@ -1,0 +1,21 @@
+{
+  "name": "hardhat-project",
+  "scripts": {
+    "deploy:ganache": "npx hardhat run --network ganache scripts/deploy.ts",
+    "deploy:mumbai": "npx hardhat run --network mumbai scripts/deploy.ts",
+    "test": "npx hardhat test",
+    "coverage": "npx hardhat coverage"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "^3.0.4",
+    "@nomicfoundation/hardhat-toolbox": "^3.0.0",
+    "@openzeppelin/contracts": "^4.9.3",
+    "ethers": "^6.7.1",
+    "hardhat": "^2.17.1"
+  },
+  "dependencies": {
+    "@nomicfoundation/hardhat-verify": "^1.1.1",
+    "@nomiclabs/hardhat-etherscan": "^3.1.7",
+    "solidity-coverage": "^0.8.4"
+  }
+}
