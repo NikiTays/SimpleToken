@@ -6,8 +6,9 @@ import "./Voting.sol";
 // Uncomment this line to use console.log
 
 contract BuySell is Voting {
-    uint256 public maxTotalSupply = 100000;
-    uint16 public constant feePercent = 1;
+    uint256 public maxTotalSupply = 100000 * 1 ether;
+    uint16 public constant feePercent = 100;
+    uint16 public constant feeDecimal = 10000;
 
     function mint(address _address, uint256 _amount) private {
         _balances[_address] += _amount;
@@ -21,7 +22,7 @@ contract BuySell is Voting {
 
     function calcBuyTokensByEth() internal returns (uint256) {
         require(msg.value > 0, "Send some ether to buy tokens.");
-        uint256 fee = (msg.value * feePercent) / 100;
+        uint256 fee = (msg.value * feePercent) / feeDecimal;
         uint256 valueWithFee = msg.value - fee;
         uint256 buyValue = valueWithFee / tokenPrice;
         require(buyValue <= maxTotalSupply - totalSupply);
@@ -56,7 +57,7 @@ contract BuySell is Voting {
     ) internal view returns (uint256) {
         require(balanceOf(msg.sender) >= _tokensToSell, "Not enough tokens");
         uint256 ethersToReturn = (_tokensToSell * tokenPrice);
-        uint256 fee = (ethersToReturn * feePercent) / 100;
+        uint256 fee = (ethersToReturn * feePercent) / feeDecimal;
         uint256 sellEth = ethersToReturn - fee;
         bool isCanSell = address(this).balance >= sellEth;
         require(isCanSell, "ethers < sellValue");

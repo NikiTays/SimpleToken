@@ -68,6 +68,13 @@ contract LinkedList {
         return votes[voteId].nodes[_price].power;
     }
 
+    function setPower(
+        uint256 _price,
+        uint256 _power
+    ) internal returns (uint256) {
+        return votes[voteId].nodes[_price].power = _power;
+    }
+
     function linkNodes(uint256 _first, uint256 _second) internal {
         setNodeNext(_first, _second);
         setNodePrev(_second, _first);
@@ -195,34 +202,6 @@ contract LinkedList {
         return false;
     }
 
-    function _permutation(
-        uint256 _price,
-        uint256 _power,
-        uint256 _index
-    ) internal returns (bool) {
-        console.log(_price, _power, _index);
-
-        if (isCanPush(_power, _index)) {
-            push(_price, _power);
-            return true;
-        }
-
-        uint256 prevIndex = getNodePrev(_index);
-        if (prevIndex == 0) {
-            if (_power > getPower(getHead())) {
-                unshift(_price, _power);
-                return true;
-            }
-        }
-
-        if (isCanInsertNoEdges(_power, _index)) {
-            insertNoEdges(_price, _power, _index);
-            return true;
-        }
-
-        return false;
-    }
-
     function _forceInsert(
         uint256 _price,
         uint256 _power,
@@ -251,6 +230,7 @@ contract LinkedList {
         uint256 _index
     ) internal view returns (bool) {
         require(!isNodeInList(_price), "node exists");
+        console.log("_index_", _index);
         require(
             isNodeInList(_index) || _index == 0,
             "index does not exist or not equal 0"
@@ -267,29 +247,19 @@ contract LinkedList {
         uint256 _price,
         uint256 _power,
         uint256 _index
-    ) internal view returns (bool) {
-        if ((isNodeInList(_price) && isNodeInList(_index)) || _index == 0) {
-            bool canPush = isCanPush(_power, _index);
-            bool canUnshift = false;
+    ) internal returns (bool) {
+        uint256 pricePower = getPower(_price);
+        uint256 pricePrev = getNodePrev(_price);
 
-            uint256 prevIndex = getNodePrev(_index);
-            if (prevIndex == 0) {
-                if (_power < getPower(getHead())) {
-                    if (getHead() == getTail()) {
-                        return true;
-                    }
-                }
-                if (_power > getPower(getHead())) {
-                    canUnshift = true;
-                }
-            }
+        deleteNode(_price);
 
-            if (canPush || canUnshift) {
-                return true;
-            }
-            return isCanInsertNoEdges(_power, _index);
+        if (isCanInsert(_price, _power, _index)) {
+            _forceInsert(_price, pricePower, pricePrev);
+            return true;
+        } else {
+            _forceInsert(_price, pricePower, pricePrev);
+            return false;
         }
-        return false;
     }
 
     function insert(
@@ -303,29 +273,53 @@ contract LinkedList {
         return true;
     }
 
-    function fakeDeleteNode(uint256 _price) internal returns (bool) {
+    function deleteNode(uint256 _price) internal returns (bool) {
+        require(isNodeInList(_price), "isNodeInList = false");
+
         bool isHead = getHead() == _price;
         bool isTail = getTail() == _price;
+        uint256 nextNode = getNodeNext(_price);
+        uint256 prevNode = getNodePrev(_price);
 
         if (isHead && isTail) {
             setHead(0);
             setTail(0);
+
+            setNodeNext(_price, 0);
+            setNodePrev(_price, 0);
+            setPower(_price, 0);
             return true;
         }
 
         if (isHead) {
-            uint256 next = getNodeNext(_price);
-            setHead(next);
+            setHead(nextNode);
+
+            setNodePrev(nextNode, 0);
+
+            setNodeNext(_price, 0);
+            setNodePrev(_price, 0);
+            setPower(_price, 0);
             return true;
         }
 
         if (isTail) {
-            uint256 prev = getNodePrev(_price);
-            setTail(prev);
+            setTail(prevNode);
+
+            setNodeNext(prevNode, 0);
+
+            setNodeNext(_price, 0);
+            setNodePrev(_price, 0);
+            setPower(_price, 0);
             return true;
         }
 
-        return false;
+        setNodeNext(_price, 0);
+        setNodePrev(_price, 0);
+        setPower(_price, 0);
+
+        linkNodes(prevNode, nextNode);
+
+        return true;
     }
 
     function permutation(
@@ -334,28 +328,8 @@ contract LinkedList {
         uint256 _index
     ) public returns (bool) {
         require(isCanPermutation(_price, _power, _index));
-
-        uint256 prevNode = getNodePrev(_price);
-        uint256 nextNode = getNodeNext(_price);
-
-        fakeDeleteNode(_price);
-
-        require(_permutation(_price, _power, _index));
-
-        if (_price != _index) {
-            if (prevNode > 0 && nextNode > 0) {
-                linkNodes(prevNode, nextNode);
-            }
-
-            if (prevNode == 0) {
-                setNodePrev(nextNode, 0);
-            }
-
-            if (nextNode == 0) {
-                setNodeNext(prevNode, 0);
-            }
-        }
-
+        deleteNode(_price);
+        _insert(_price, _power, _index);
         return true;
     }
 
@@ -363,28 +337,9 @@ contract LinkedList {
         uint256 _price,
         uint256 _power,
         uint256 _index
-    ) internal returns (bool) {
-        uint256 prevNode = getNodePrev(_price);
-        uint256 nextNode = getNodeNext(_price);
-
-        fakeDeleteNode(_price);
-
-        require(_forceInsert(_price, _power, _index));
-
-        if (_price != _index) {
-            if (prevNode > 0 && nextNode > 0) {
-                linkNodes(prevNode, nextNode);
-            }
-
-            if (prevNode == 0) {
-                setNodePrev(nextNode, 0);
-            }
-
-            if (nextNode == 0) {
-                setNodeNext(prevNode, 0);
-            }
-        }
-
+    ) public returns (bool) {
+        deleteNode(_price);
+        _forceInsert(_price, _power, _index);
         return true;
     }
 }

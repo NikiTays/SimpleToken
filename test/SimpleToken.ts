@@ -2,12 +2,22 @@ import { expect, use } from "chai";
 import { ethers } from "hardhat";
 import { mine } from "@nomicfoundation/hardhat-network-helpers";
 
+const ether = (num: bigint) => num * 10n ** 18n;
+const feePercent = 100n;
+const feeDecimal = 10000n;
+
 async function deployContract() {
   const [owner, address1, address2, address3, address4, address5] =
     await ethers.getSigners();
 
   const SimpleToken = await ethers.getContractFactory("SimpleToken");
   const contract = await SimpleToken.deploy();
+
+  const calcBuyWithFee = async (num: bigint) => {
+    const fee = (num * feePercent) / feeDecimal;
+    const valueWithFee = num - fee;
+    return valueWithFee / (await contract.tokenPrice());
+  };
 
   const getNodes = async () => {
     const voteId = await contract.voteId();
@@ -47,7 +57,7 @@ async function deployContract() {
       prev: bigint;
       next: bigint;
     }[],
-    power: bigint
+    power: bigint,
   ) => {
     const node = nodes.find((e) => power > e.power);
     return node?.price || 0n;
@@ -82,7 +92,7 @@ async function deployContract() {
 
     const firstIndex = await getMoveToIndex(
       nodes,
-      firstVotePower - params.value
+      firstVotePower - params.value,
     );
 
     const nodeIndex = nodes.findIndex((e: any) => e.price == msgSenderNode);
@@ -92,7 +102,7 @@ async function deployContract() {
 
     const secondIndex = await getMoveToIndex(
       nodes,
-      secondVotePower + params.value
+      secondVotePower + params.value,
     );
 
     await contract
@@ -113,6 +123,7 @@ async function deployContract() {
     vote,
     startVoting,
     voterTransfer,
+    calcBuyWithFee,
   };
 }
 
@@ -123,19 +134,18 @@ describe("Deploy contract", () => {
     expect(await contract.name()).to.equal("SimpleToken");
     expect(await contract.symbol()).to.equal("ST");
     expect(await contract.tokenPrice()).to.equal(1n);
-    expect(await contract.maxTotalSupply()).to.equal(100000n);
-    expect(await contract.feePercent()).to.equal(1);
+    expect(await contract.maxTotalSupply()).to.equal(ether(100000n));
+    expect(await contract.feePercent()).to.equal(feePercent);
   });
 });
 
 describe("Buy&Sell", () => {
   it("Should allow to buy tokens with fee", async () => {
-    const { contract, address1 } = await deployContract();
+    const { contract, address1, calcBuyWithFee } = await deployContract();
 
     const purchaseValue = 100n;
-    const fee = (purchaseValue * (await contract.feePercent())) / 100n;
-    const valueWithFee = purchaseValue - fee;
-    const expectedTokens = valueWithFee / (await contract.tokenPrice());
+
+    const expectedTokens = await calcBuyWithFee(purchaseValue);
 
     await contract.connect(address1).buy({ value: purchaseValue });
 
@@ -153,7 +163,7 @@ describe("Buy&Sell", () => {
       .balanceOf(address1.address);
 
     const balanceBeforeSell = await ethers.provider.getBalance(
-      address1.address
+      address1.address,
     );
 
     const tx = await contract.connect(address1).sell(tokensToSell);
@@ -165,15 +175,15 @@ describe("Buy&Sell", () => {
     const feePercent = await contract.feePercent();
 
     const etherToReturn = tokenPrice * tokensToSell;
-    const fee = (etherToReturn * feePercent) / 100n;
+    const fee = (etherToReturn * feePercent) / feeDecimal;
     const sellEth = etherToReturn - fee;
 
     expect(finalBalance - balanceBeforeSell + gasOnSellSpent).to.be.closeTo(
       sellEth,
-      100000000000000
+      100000000000000,
     );
     expect(
-      await contract.connect(address1).balanceOf(address1.address)
+      await contract.connect(address1).balanceOf(address1.address),
     ).to.equal(0);
   });
 
@@ -183,7 +193,7 @@ describe("Buy&Sell", () => {
     const tokensToSell = 1000n;
 
     await expect(
-      contract.connect(address1).sell(tokensToSell)
+      contract.connect(address1).sell(tokensToSell),
     ).to.be.revertedWith("Not enough tokens");
   });
 
@@ -192,7 +202,7 @@ describe("Buy&Sell", () => {
     const { contract, address1 } = await deployContract();
 
     await expect(
-      contract.connect(address1).buy({ value: purchaseValue })
+      contract.connect(address1).buy({ value: purchaseValue }),
     ).to.be.revertedWith("Send some ether to buy tokens.");
     expect(await contract.balanceOf(address1.address)).to.equal(purchaseValue);
   });
@@ -200,28 +210,28 @@ describe("Buy&Sell", () => {
 
 describe("ERC20", async () => {
   it("Should allow to transfer tokens when you already have them", async () => {
-    const purchaseValue = 10000n;
+    const purchaseValue = ether(1000n);
     const { contract, address1, address2 } = await deployContract();
 
     await contract.connect(address1).buy({ value: purchaseValue });
 
     const expectedTokens =
       purchaseValue -
-      (purchaseValue * 1n) / 100n / (await contract.tokenPrice());
+      (purchaseValue * feePercent) / feeDecimal / (await contract.tokenPrice());
     const expectedTokensSend = expectedTokens / 2n;
     const expectedTokensLeft = expectedTokens / 2n;
 
     await expect(
-      contract.connect(address1).transfer(address2.address, expectedTokensSend)
+      contract.connect(address1).transfer(address2.address, expectedTokensSend),
     )
       .to.emit(contract, "Transfer")
       .withArgs(address1.address, address2.address, expectedTokensSend);
 
     expect(await contract.balanceOf(address2.address)).to.equal(
-      expectedTokensSend
+      expectedTokensSend,
     );
     expect(await contract.balanceOf(address1.address)).to.equal(
-      expectedTokensLeft
+      expectedTokensLeft,
     );
   });
 
@@ -233,10 +243,10 @@ describe("ERC20", async () => {
 
     const expectedTokens =
       purchaseValue -
-      (purchaseValue * 1n) / 100n / (await contract.tokenPrice());
+      (purchaseValue * feePercent) / feeDecimal / (await contract.tokenPrice());
 
     await expect(
-      contract.connect(address1).transfer(ethers.ZeroAddress, expectedTokens)
+      contract.connect(address1).transfer(ethers.ZeroAddress, expectedTokens),
     ).to.be.revertedWith("Cannot transfer to zero address");
   });
 
@@ -248,7 +258,7 @@ describe("ERC20", async () => {
 
     const expectedTokens =
       purchaseValue -
-      (purchaseValue * 1n) / 100n / (await contract.tokenPrice());
+      (purchaseValue * feePercent) / feeDecimal / (await contract.tokenPrice());
     const expectedTokensApproved = expectedTokens / 2n;
     const expectedTokensLeft = expectedTokens / 2n;
 
@@ -262,36 +272,18 @@ describe("ERC20", async () => {
         .transferFrom(
           address1.address,
           address3.address,
-          expectedTokensApproved
-        )
+          expectedTokensApproved,
+        ),
     )
       .to.emit(contract, "Transfer")
       .withArgs(address1.address, address3.address, expectedTokensApproved);
 
     expect(await contract.balanceOf(address3.address)).to.equal(
-      expectedTokensApproved
+      expectedTokensApproved,
     );
     expect(await contract.balanceOf(address1.address)).to.equal(
-      expectedTokensLeft
+      expectedTokensLeft,
     );
-
-    it("Should correct change 2 voter nodes if voterTransfer", async () => {
-      const { contract, address1, address2, voterTransfer, getNodes } =
-        await deployContract();
-      let res1 = await contract.balanceOf(address1);
-      let res2 = await contract.balanceOf(address2);
-
-      await contract.connect(address1).buy({ value: 100n });
-      await contract.connect(address2).buy({ value: 100n });
-
-      res1 = await contract.balanceOf(address1);
-      res2 = await contract.balanceOf(address2);
-
-      await contract.connect(address1).startVoting(100n);
-      await contract.connect(address2).vote(200n, 0);
-
-      await contract.connect(address1).voterTransfer(address2, 50n, 0n, 200n);
-    });
   });
 
   it("Should not allow to transferFrom your tokens to zero address", async () => {
@@ -302,7 +294,7 @@ describe("ERC20", async () => {
 
     const expectedTokens =
       purchaseValue -
-      (purchaseValue * 1n) / 100n / (await contract.tokenPrice());
+      (purchaseValue * feePercent) / feeDecimal / (await contract.tokenPrice());
     const expectedTokensApproved = expectedTokens / 2n;
 
     await contract
@@ -315,8 +307,8 @@ describe("ERC20", async () => {
         .transferFrom(
           address1.address,
           ethers.ZeroAddress,
-          expectedTokensApproved
-        )
+          expectedTokensApproved,
+        ),
     ).to.be.revertedWith("Cannot transfer to zero address");
   });
 
@@ -341,7 +333,7 @@ describe("ERC20", async () => {
 
 describe("Voting", async () => {
   it("Should allow start Vote to anyone who has minimum tokens required", async () => {
-    const purchaseValue = 50n;
+    const purchaseValue = ether(100n);
     const { contract, address1 } = await deployContract();
 
     expect(await contract.isVoting()).to.equal(false);
@@ -350,14 +342,14 @@ describe("Voting", async () => {
 
     await expect(contract.connect(address1).startVoting(10n)).to.emit(
       contract,
-      "VotingStarted"
+      "VotingStarted",
     );
 
     expect(await contract.isVoting()).to.equal(true);
   });
 
   it("Should not allow to start new Vote when current vote is not ended", async () => {
-    const purchaseValue = 1000n;
+    const purchaseValue = ether(1000n);
     const { contract, address1 } = await deployContract();
 
     expect(await contract.isVoting()).to.equal(false);
@@ -366,7 +358,7 @@ describe("Voting", async () => {
     await contract.connect(address1).startVoting(10n);
 
     await expect(
-      contract.connect(address1).startVoting(10n)
+      contract.connect(address1).startVoting(10n),
     ).to.be.revertedWith("Vote still did not exist");
     expect(await contract.isVoting()).to.equal(true);
   });
@@ -375,14 +367,14 @@ describe("Voting", async () => {
     const { contract, address1 } = await deployContract();
 
     await expect(
-      contract.connect(address1).startVoting(10n)
+      contract.connect(address1).startVoting(10n),
     ).to.be.revertedWith("Not enough tokens");
 
     expect(await contract.isVoting()).to.equal(false);
   });
 
   it("Should not allow to add vote price if address do not have enough tokens for minimal add vote requirence", async () => {
-    const purchaseValueOfAddress1 = 10000n;
+    const purchaseValueOfAddress1 = ether(1000n);
     const price1 = 10n;
     const price2 = 20n;
 
@@ -392,27 +384,27 @@ describe("Voting", async () => {
     await contract.connect(address1).startVoting(price1);
 
     await expect(contract.connect(address2).vote(price2, 0)).to.be.revertedWith(
-      "Not enough tokens"
+      "Not enough tokens",
     );
   });
 
   it("Should allow to vote for some price if address have enough tokens", async () => {
     const votePrice = 123n;
-    const purchaseValueOfAddress1 = 10000n;
-    const purchaseValueOfAddress2 = 100n;
+    const purchaseValueOfAddress1 = ether(1000n);
+    const purchaseValueOfAddress2 = ether(100n);
     const { contract, address1, address2, getNodes } = await deployContract();
 
     await contract.connect(address1).buy({ value: purchaseValueOfAddress1 });
 
     await expect(contract.connect(address1).startVoting(votePrice)).to.emit(
       contract,
-      "VotingStarted"
+      "VotingStarted",
     );
 
     await contract.connect(address2).buy({ value: purchaseValueOfAddress2 });
     console.log(await getNodes());
     console.log(await contract.votes(0n));
-    await contract.connect(address2).vote(votePrice, votePrice);
+    await contract.connect(address2).vote(votePrice, 0);
 
     const address1Tokens = await contract.balanceOf(address1.address);
     const address2Tokens = await contract.balanceOf(address2.address);
@@ -430,12 +422,12 @@ describe("Voting", async () => {
     await contract.connect(address1).buy({ value: purchaseValue });
 
     await expect(
-      contract.connect(address1).vote(proposedPrice, 1n)
+      contract.connect(address1).vote(proposedPrice, 1n),
     ).to.be.revertedWith("the voting hasn't started yet");
   });
 
   it("Should not allow to vote twice", async () => {
-    const purchaseValue = 100n;
+    const purchaseValue = ether(100n);
     const { contract, address1 } = await deployContract();
 
     const proposedPrice = 100n;
@@ -444,12 +436,12 @@ describe("Voting", async () => {
     await contract.connect(address1).startVoting(proposedPrice);
 
     await expect(
-      contract.connect(address1).vote(proposedPrice, 0n)
+      contract.connect(address1).vote(proposedPrice, 0n),
     ).to.be.revertedWith("You already voted!");
   });
 
   it("Should allow to end vote if time have been ended", async () => {
-    const purchaseValue = 100n;
+    const purchaseValue = ether(100n);
     const { contract, address1 } = await deployContract();
 
     const proposedPrice = 100n;
@@ -472,10 +464,10 @@ describe("Voting", async () => {
     const randomProposedPrice = 300n;
     const randomProposedPrice1 = 200n;
     const randomProposedPrice2 = 400n;
-    const purchaseValueOfAddress1 = 300n;
-    const purchaseValueOfAddress2 = 700n;
-    const purchaseValueOfAddress3 = 500n;
-    const purchaseValueOfAddress4 = 300n;
+    const purchaseValueOfAddress1 = ether(300n);
+    const purchaseValueOfAddress2 = ether(700n);
+    const purchaseValueOfAddress3 = ether(500n);
+    const purchaseValueOfAddress4 = ether(300n);
     const { contract, address1, address2, address3, address4, getNodes } =
       await deployContract();
 
@@ -525,7 +517,7 @@ describe("Voting", async () => {
       expect(mock1[q].next).to.be.equal(nodesArrayBeforeVote[q].next);
       expect(mock1[q].prev).to.be.equal(nodesArrayBeforeVote[q].prev);
       expect(mock1[q].price).to.be.equal(nodesArrayBeforeVote[q].price);
-      expect(mock1[q].power).to.be.equal(nodesArrayBeforeVote[q].power);
+      expect(ether(mock1[q].power)).to.be.equal(nodesArrayBeforeVote[q].power);
     }
 
     await contract.connect(address4).voterSell(address4Tokens, 0n);
@@ -546,7 +538,7 @@ describe("Voting", async () => {
       expect(mock2[q].next).to.be.equal(nodesArray[q].next);
       expect(mock2[q].prev).to.be.equal(nodesArray[q].prev);
       expect(mock2[q].price).to.be.equal(nodesArray[q].price);
-      expect(mock2[q].power).to.be.equal(nodesArray[q].power);
+      expect(ether(mock2[q].power)).to.be.equal(nodesArray[q].power);
     }
 
     await mine(500, { interval: 20 });
@@ -560,7 +552,7 @@ describe("Voting", async () => {
   });
 
   it("Should not allow to end vote if time have not been ended", async () => {
-    const purchaseValue = 100n;
+    const purchaseValue = ether(100n);
     const { contract, address1 } = await deployContract();
 
     const proposedPrice = 100n;
@@ -569,7 +561,7 @@ describe("Voting", async () => {
     await contract.connect(address1).startVoting(proposedPrice);
 
     await expect(contract.connect(address1).endVoting()).revertedWith(
-      "Voting is not over yet"
+      "Voting is not over yet",
     );
 
     expect(await contract.isVoting()).to.equal(true);
@@ -578,7 +570,7 @@ describe("Voting", async () => {
 
   it("Should remove sell anount of tokens after sell of voter", async () => {
     const randomProposedPrice = 12n;
-    const purchaseValue = 101n;
+    const purchaseValue = ether(101n);
     const { contract, address1, getNodes } = await deployContract();
 
     await contract.connect(address1).buy({ value: purchaseValue });
@@ -587,21 +579,21 @@ describe("Voting", async () => {
 
     const address1Tokens = await contract.balanceOf(address1.address);
     expect(await contract.getPower(randomProposedPrice)).to.equal(
-      address1Tokens
+      address1Tokens,
     );
 
     const sellValue = address1Tokens / 2n;
 
     console.log(await getNodes());
 
-    await contract.connect(address1).voterSell(sellValue, randomProposedPrice);
+    await contract.connect(address1).voterSell(sellValue, 0n);
 
     expect(await contract.getPower(randomProposedPrice)).to.equal(sellValue);
   });
 
   it("Should add buy anount of tokens after buy of voter", async () => {
     const randomProposedPrice = 123n;
-    const purchaseValue = 101n;
+    const purchaseValue = ether(101n);
     const { contract, address1 } = await deployContract();
 
     await contract.connect(address1).buy({ value: purchaseValue });
@@ -610,34 +602,32 @@ describe("Voting", async () => {
 
     const address1Tokens = await contract.balanceOf(address1.address);
     expect(await contract.getPower(randomProposedPrice)).to.equal(
-      address1Tokens
+      address1Tokens,
     );
 
-    await contract
-      .connect(address1)
-      .voterBuy(randomProposedPrice, { value: purchaseValue });
+    await contract.connect(address1).voterBuy(0n, { value: purchaseValue });
 
     const address1TokensAfterBuy = await contract.balanceOf(address1.address);
     expect(await contract.getPower(randomProposedPrice)).to.equal(
-      address1TokensAfterBuy
+      address1TokensAfterBuy,
     );
   });
 
   it("Test insert node after add vote function", async () => {
     const randomProposedPrice = 200n;
     const randomProposedPrice1 = 100n;
-    const purchaseValueOfAddress1 = 202n;
-    const purchaseValueOfAddress2 = 101n;
+    const purchaseValueOfAddress1 = ether(202n);
+    const purchaseValueOfAddress2 = ether(101n);
     const { contract, address1, address2, getNodes } = await deployContract();
 
     await contract.connect(address1).buy({ value: purchaseValueOfAddress1 });
 
     await expect(
-      contract.connect(address1).startVoting(randomProposedPrice)
+      contract.connect(address1).startVoting(randomProposedPrice),
     ).to.emit(contract, "VotingStarted");
 
     await contract.connect(address2).buy({ value: purchaseValueOfAddress2 });
-    await contract.connect(address2).vote(randomProposedPrice1, 0);
+    await contract.connect(address2).vote(randomProposedPrice1, 0n);
 
     const address1Tokens = await contract.balanceOf(address1.address);
     const address2Tokens = await contract.balanceOf(address2.address);
@@ -664,25 +654,25 @@ describe("Voting", async () => {
   it("Test insert node and after add vote", async () => {
     const randomProposedPrice = 300n;
     const randomProposedPrice1 = 200n;
-    const purchaseValueOfAddress1 = 303n;
-    const purchaseValueOfAddress2 = 202n;
-    const purchaseValueOfAddress3 = 101n;
+    const purchaseValueOfAddress1 = ether(303n);
+    const purchaseValueOfAddress2 = ether(202n);
+    const purchaseValueOfAddress3 = ether(101n);
     const { contract, address1, address2, address3, getNodes } =
       await deployContract();
 
     await contract.connect(address1).buy({ value: purchaseValueOfAddress1 });
 
     await expect(
-      contract.connect(address1).startVoting(randomProposedPrice)
+      contract.connect(address1).startVoting(randomProposedPrice),
     ).to.emit(contract, "VotingStarted");
 
     await contract.connect(address2).buy({ value: purchaseValueOfAddress2 });
-    await contract.connect(address2).vote(randomProposedPrice1, 0);
+    await contract.connect(address2).vote(randomProposedPrice1, 0n);
 
     await contract.connect(address3).buy({ value: purchaseValueOfAddress3 });
     await contract
       .connect(address3)
-      .vote(randomProposedPrice, randomProposedPrice);
+      .vote(randomProposedPrice, randomProposedPrice1);
 
     const address1Tokens = await contract.balanceOf(address1.address);
     const address2Tokens = await contract.balanceOf(address2.address);
@@ -710,10 +700,10 @@ describe("Voting", async () => {
     const randomProposedPrice = 300n;
     const randomProposedPrice1 = 200n;
     const randomProposedPrice2 = 400n;
-    const purchaseValueOfAddress1 = 300n;
-    const purchaseValueOfAddress2 = 700n;
-    const purchaseValueOfAddress3 = 500n;
-    const purchaseValueOfAddress4 = 300n;
+    const purchaseValueOfAddress1 = ether(300n);
+    const purchaseValueOfAddress2 = ether(700n);
+    const purchaseValueOfAddress3 = ether(500n);
+    const purchaseValueOfAddress4 = ether(300n);
     const { contract, address1, address2, address3, address4, getNodes } =
       await deployContract();
 
@@ -791,10 +781,10 @@ describe("Voting", async () => {
     const randomProposedPrice = 300n;
     const randomProposedPrice1 = 200n;
     const randomProposedPrice2 = 400n;
-    const purchaseValueOfAddress1 = 300n;
-    const purchaseValueOfAddress2 = 700n;
-    const purchaseValueOfAddress3 = 500n;
-    const purchaseValueOfAddress4 = 300n;
+    const purchaseValueOfAddress1 = ether(300n);
+    const purchaseValueOfAddress2 = ether(700n);
+    const purchaseValueOfAddress3 = ether(500n);
+    const purchaseValueOfAddress4 = ether(300n);
     const { contract, address1, address2, address3, address4, getNodes } =
       await deployContract();
 
@@ -843,7 +833,7 @@ describe("Voting", async () => {
       expect(mock1[q].next).to.be.equal(nodesArrayBeforeVote[q].next);
       expect(mock1[q].prev).to.be.equal(nodesArrayBeforeVote[q].prev);
       expect(mock1[q].price).to.be.equal(nodesArrayBeforeVote[q].price);
-      expect(mock1[q].power).to.be.equal(nodesArrayBeforeVote[q].power);
+      expect(ether(mock1[q].power)).to.be.equal(nodesArrayBeforeVote[q].power);
     }
 
     await contract.connect(address4).voterSell(address4Tokens, 0n);
@@ -864,7 +854,7 @@ describe("Voting", async () => {
       expect(mock2[q].next).to.be.equal(nodesArray[q].next);
       expect(mock2[q].prev).to.be.equal(nodesArray[q].prev);
       expect(mock2[q].price).to.be.equal(nodesArray[q].price);
-      expect(mock2[q].power).to.be.equal(nodesArray[q].power);
+      expect(ether(mock2[q].power)).to.be.equal(nodesArray[q].power);
     }
   });
 });
@@ -922,7 +912,7 @@ describe("linked list", async () => {
     mock.forEach(async (e) => await contract.insert(e.price, e.power, e.index));
 
     await expect(contract.insert(mock[0].price, 102n, 0n)).to.be.revertedWith(
-      "node exists"
+      "node exists",
     );
 
     contract.insert(101n, 102n, 0n);
@@ -930,7 +920,7 @@ describe("linked list", async () => {
     contract.insert(1000n, 300n, 400n);
 
     await expect(contract.insert(101n, 999n, 123n)).to.be.revertedWith(
-      "index does not exist or not equal 0"
+      "index does not exist or not equal 0",
     );
 
     const nodes = await getNodes();

@@ -8,7 +8,7 @@ import "./IVoting.sol";
 contract Voting is IVoting, ERC20, LinkedList {
     uint256 public timeToVote = 1 minutes;
     uint256 public votingStartTime = 0;
-    uint256 public minTokenAmount = 50;
+    uint256 public minTokenAmount = 50 * 1 ether;
     uint256 public tokenPrice = 1;
     bool public isVoting = false;
 

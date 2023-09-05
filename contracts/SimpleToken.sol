@@ -44,7 +44,7 @@ contract SimpleToken is BuySell {
         require(_to != address(0), "Cannot transfer to zero address");
         bool msgSenderisVoter = isVoter(msg.sender);
         bool toIsVoter = isVoter(_to);
-        require(msgSenderisVoter || toIsVoter);
+        require(msgSenderisVoter && toIsVoter);
         require(_balances[msg.sender] >= _value);
 
         uint256 firstVoterPrice = getVoterVote(msg.sender);
@@ -53,8 +53,6 @@ contract SimpleToken is BuySell {
         uint256 firstPower = getPower(firstVoterPrice);
         uint256 secondPower = getPower(secondVoterPrice);
 
-        require(msgSenderisVoter || toIsVoter);
-
         uint256 before = getNodeNext(firstVoterPrice);
 
         if (
@@ -62,7 +60,7 @@ contract SimpleToken is BuySell {
         ) {
             permutation(firstVoterPrice, firstPower - _value, _firstIndex);
         } else {
-            return (false);
+            require(false, "cant insert node _firstIndex");
         }
 
         if (
@@ -75,7 +73,7 @@ contract SimpleToken is BuySell {
             permutation(secondVoterPrice, secondPower + _value, _secondIndex);
         } else {
             forcePermutation(firstVoterPrice, firstPower, before);
-            return (false);
+            require(false, "cant insert node _secondIndex");
         }
 
         _balances[msg.sender] -= _value;
@@ -97,15 +95,14 @@ contract SimpleToken is BuySell {
 
         bool msgSenderisVoter = isVoter(_from);
         bool toIsVoter = isVoter(_to);
-        require(msgSenderisVoter || toIsVoter);
+
+        require(msgSenderisVoter && toIsVoter);
 
         uint256 firstVoterPrice = getVoterVote(msg.sender);
         uint256 secondVoterPrice = getVoterVote(_to);
 
         uint256 firstPower = getPower(firstVoterPrice);
         uint256 secondPower = getPower(secondVoterPrice);
-
-        require(msgSenderisVoter || toIsVoter);
 
         uint256 before = getNodeNext(firstVoterPrice);
 
